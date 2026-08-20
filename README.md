@@ -194,6 +194,26 @@ struct Register {
 把 `my_sink.cpp` 加进 CMake 的 `panorama_npu_adapter` 源列表，运行时：
 `./build/panorama_npu_live MODEL ASSETS_DIR my_sink "你的配置"`
 
+## 📊 性能参考 / Performance Reference
+
+本项目是串联层（不直接计算 NPU/GPU 耗时），性能主要由上游两个模块决定。本节给出本项目**推流链路**的设计目标与实际参数：
+
+| 项 | 设计值 | 来源 |
+|---|---|---|
+| 全景输入帧率 | 25 FPS（可调到 60/120） | 摄像头 + 上游全景 |
+| 全景输出帧率 | ≈ 23.6~25 FPS（实际业务） | PC 端 `FPS=xx.x` 字段 |
+| 全景编码输出尺寸 | 2256×336（裁剪后 16 对齐） | TCP 5000 推流 |
+| 编码码率 | 4 Mbps CBR | `bps=4000000` |
+| GOP | 50 帧（≈ 2 秒） | MPP `rc:gop = fps*2` |
+| TCP 推流并发客户端 | 上限 4 个 | kMaxClients = 4 |
+| 每个客户端队列深度 | 4 帧（满则丢帧） | kQueueDepth = 4 |
+| TCP 连接行为 | 新客户端补发 SPS/PPS，慢客户端不阻塞 | `cache_sps_pps` + 队列丢弃 |
+| UDP 状态广播 | 每 10 帧刷新一次 | 集成端 FPS 计算 |
+| 板端推理侧 | 30.82 FPS（Packed） / 10.7~10.8 FPS（Legacy） | 上游 NPU 模块 |
+| 零拷贝收益 | 全景 fd → NPU 槽位：无 CPU memcpy | `submit_external` |
+
+> **调整建议**：CPU 端（producer）期望帧率 < 25 时，把 `fps` 调小（如 15）可降低编码负担；`bps` 可按网络带宽在 2~6 Mbps 范围内调。
+
 ## 📡 推流协议 / Streaming Protocol
 
 | 通道 | 协议 | 端口 | 内容 |
