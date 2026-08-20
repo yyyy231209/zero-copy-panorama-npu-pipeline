@@ -198,21 +198,26 @@ struct Register {
 
 | 通道 | 协议 | 端口 | 内容 |
 |---|---|---|---|
-| 全景检测画面 | TCP Server | 5000 | 裸 H.264 Annex-B（2256×336，25 FPS，4 Mbps CBR，GOP 50） |
+| 全景检测画面 | TCP Server | 5000 | 裸 H.264 Annex-B（裁剪后 **2256×336**，25 FPS，4 Mbps CBR，GOP 50） |
 | 板端状态 | UDP 广播 | 5003 | `FPS=23.7, detected=0`（每 10 帧刷新，无结尾 NUL） |
 
+**注意**：第五路摄像头（1280×720@30，端口 5001）由独立服务 `fifth_camera_stream` 推流，不在本项目范围内。
+
 - TCP 最多 4 个并发客户端；新客户端接入补发 SPS/PPS
-- 客户端必须用 H.264 parser（`av_parser_parse2`），不能假设一次 read 是一帧
-- UDP 有限广播 `255.255.255.255`，PC 绑定 `0.0.0.0:5003` + ShareAddress
+- 客户端**必须**用 H.264 parser（如 FFmpeg 的 `av_parser_parse2` + `AVCodecParserContext`），不能假设一次 `read` 是一帧
+- PC 端用 FFmpeg 解码：`avcodec_find_decoder(AV_CODEC_ID_H264)` + `AV_CODEC_FLAG_LOW_DELAY`，像素转 `BGRA`/`RGB24` 给 Qt 显示
+- UDP 有限广播 `255.255.255.255`，PC 绑定 `0.0.0.0:5003` + `ShareAddress`
 - 状态文本正则：`^FPS=([0-9.]+),\s*detected=([0-9]+)$`
 
 ## 🔗 相关项目 / Related Projects
 
-| 项目 | 关系 |
-|---|---|
-| [zero-copy-vpu-gpu-rga-stitch](https://github.com/yyyy231209/zero-copy-vpu-gpu-rga-stitch) | 上游：全景拼接（输出 2248×330 DMA-BUF） |
-| [zero-copy-tri-core-npu-inference](https://github.com/yyyy231209/zero-copy-tri-core-npu-inference) | 上游：三核 NPU 检测（输出检测画布） |
-| galaxy-monitor | 下游：PC 端 Qt 监控客户端（配套开源项目） |
+| 项目 | 关系 | 关键输出契约 |
+|---|---|---|
+| [zero-copy-vpu-gpu-rga-stitch](https://github.com/yyyy231209/zero-copy-vpu-gpu-rga-stitch) | 上游：全景拼接 | **2248×330 BGR888** DMA-BUF（stride 2256，画布 2248×1024 BGR888 含检测框） |
+| [zero-copy-tri-core-npu-inference](https://github.com/yyyy231209/zero-copy-tri-core-npu-inference) | 上游：三核 NPU 检测 | 消费上游客景 fd，输出 2248×1024 BGR888 检测画布 |
+| galaxy-monitor | 下游：PC 端 Qt 监控客户端（配套开源项目） | 按本文「推流协议」接收 TCP 5000 + UDP 5003 |
+
+> **本项目的「输出契约」就是上游两者的拼接接口**：上游全景 `acquire()` 出 2248×330 BGR888，集成端 `submit_external()` 交给 NPU，NPU 输出 2248×1024 BGR888（含检测框），集成端 `take_ready()` 后按 `frame_id` 重排交给输出插件（默认 tcp_h264 推流 5000 端口）。
 
 ## ❓ 常见问题 / FAQ
 
