@@ -22,6 +22,14 @@
 #include <vector>
 
 #include <sys/poll.h>          // pollfd, POLLIN/POLLHUP/POLLERR
+#include <netinet/in.h>        // sockaddr_in, INADDR_BROADCAST
+#include <netinet/tcp.h>       // TCP_NODELAY
+#include <sys/socket.h>        // socket, setsockopt, sendto, SOL_SOCKET
+#include <arpa/inet.h>         // htonl, htons, INADDR_BROADCAST
+#include <unistd.h>           // close
+#include <cerrno>             // errno, strerror
+#include <cstdio>             // fprintf
+#include <cstring>            // strlen, memcpy, memset
 
 #include <im2d.h>
 #include <rockchip/mpp_buffer.h>
@@ -707,7 +715,7 @@ public:
         setsockopt(sock_, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
         int bc = 1;
         setsockopt(sock_, SOL_SOCKET, SO_BROADCAST, &bc, sizeof(bc));
-        addr_{};
+        std::memset(&addr_, 0, sizeof(addr_));
         addr_.sin_family = AF_INET;
         addr_.sin_addr.s_addr = htonl(INADDR_BROADCAST);
         addr_.sin_port = htons(static_cast<std::uint16_t>(port));
