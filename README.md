@@ -79,7 +79,7 @@ The integration layer that connects two upstream modules into one end-to-end pip
 | `include/output_sink.h` | **输出插件接口**：`IOutputSink`（init/send/close/name）+ `OutputFrame` + 工厂注册（`create_sink`/`register_sink_factory`） |
 | `src/output_sink.cpp` | 插件注册表实现（线程安全、名称冲突检测、`list_registered_sinks`） |
 | `include/sinks/tcp_h264_sink.h` | TCP H.264 推流插件声明（PIMPL，MPP/RGA 头不进公共接口） |
-| `src/sinks/tcp_h264_sink.cpp` | **TCP 推流插件实现**（793 行）：配置解析 → NV12 双缓冲 → RGA imcrop → MPP 硬编码 → 4 槽引用计数推流 → UDP 状态；含 `null` sink |
+| `src/sinks/tcp_h264_sink.cpp` | **TCP 推流插件实现**（838 行）：配置解析 → NV12 双缓冲 → RGA imcrop → MPP 硬编码 → 4 槽引用计数推流 → UDP 状态；含 `null` sink |
 | `include/panorama_npu_adapter.h` | 全景→NPU 桥接声明：`SubmitStats` + `ReleaseBridge`（6 个桥，对应 NPU 槽位） |
 | `src/panorama_npu_adapter.cpp` | **所有权桥接实现**：校验全景帧契约（2248×330/stride 2256）→ `submit_external` 移交 → release callback 归还上游槽 |
 | `apps/panorama_npu_live.cpp` | **完整链路演示**：Producer（全景→NPU）+ Consumer（重排→插件）+ 5 秒统计 |
@@ -221,7 +221,7 @@ struct Register {
 | 全景检测画面 | TCP Server | 5000 | 裸 H.264 Annex-B（裁剪后 **2256×336**，25 FPS，4 Mbps CBR，GOP 50） |
 | 板端状态 | UDP 广播 | 5003 | `FPS=23.7, detected=0`（每 10 帧刷新，无结尾 NUL） |
 
-**注意**：第五路摄像头（1280×720@30，端口 5001）由独立服务 `fifth_camera_stream` 推流，不在本项目范围内。
+**注意**：独立的单摄像头画面（1280×720@30，端口 5001）由独立服务 [zero-copy-v4l2-camera-stream](https://github.com/yyyy231209/zero-copy-v4l2-camera-stream) 推流，不在本项目范围内。
 
 - TCP 最多 4 个并发客户端；新客户端接入补发 SPS/PPS
 - 客户端**必须**用 H.264 parser（如 FFmpeg 的 `av_parser_parse2` + `AVCodecParserContext`），不能假设一次 `read` 是一帧
