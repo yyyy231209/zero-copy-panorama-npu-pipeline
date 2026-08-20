@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  # 源码级检查：aarch64 交叉语法检查（含两个上游仓库的头文件）
+  syntax-check:
+    name: Source syntax check (aarch64 cross)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cross compiler + OpenCV headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            g++-aarch64-linux-gnu \
+            ocl-icd-opencl-dev \
+            libopencv-dev
+
+      - name: Fetch upstream headers (panorama + NPU + MPP + RGA)
+        run: |
+          # 两个上游仓库（取头文件 + rknn_api.h）
+          git clone --depth 1 --branch v1.0.0 \
+            https://github.com/yyyy231209/zero-copy-vpu-gpu-rga-stitch.git /tmp/panorama
+          git clone --depth 1 --branch v1.0.0 \
+            https://github.com/yyyy231209/zero-copy-tri-core-npu-inference.git /tmp/npu
+          # MPP / RGA 官方头（模拟安装布局）
+          git clone --depth 1 -b develop https://github.com/rockchip-linux/mpp.git /tmp/mpp
+          mkdir -p /tmp/mpp/inc/rockchip
+          cp /tmp/mpp/inc/*.h /tmp/mpp/inc/rockchip/
+          git clone --depth 1 https://github.com/airockchip/librga.git /tmp/librga
+          mkdir -p /tmp/librga/include/rga
+          cp /tmp/librga/include/*.h /tmp/librga/include/rga/
+          echo "== headers ready =="
+          ls /tmp/panorama/include | head -4
+          ls /tmp/npu/include | head -4
+
+      - name: C++ syntax check (all src/)
+        run: |
+          set -e
+          for f in src/*.cpp src/sinks/*.cpp; do
+            echo "== checking $f"
+            aarch64-linux-gnu-g++ -std=c++17 -Wall -Wextra -fsyntax-only \
+              -Iinclude \
+              -I/tmp/panorama/include \
+              -I/tmp/npu/include \
+              -I/tmp/npu/third_party/rknn/include \
+              -I/tmp/mpp/inc \
+              -I/tmp/librga/include \
+              "$f" || exit 1
+          done
+
+      - name: C++ syntax check (apps/)
+        run: |
+          set -e
+          for f in apps/*.cpp; do
+            echo "== checking $f"
+            aarch64-linux-gnu-g++ -std=c++17 -Wall -Wextra -fsyntax-only \
+              -Iinclude \
+              -I/tmp/panorama/include \
+              -I/tmp/npu/include \
+              -I/tmp/npu/third_party/rknn/include \
+              -I/tmp/mpp/inc \
+              -I/tmp/librga/include \
+              -I/usr/include/opencv4 \
+              "$f" || exit 1
+          done
+
+  # 工程结构 + 协议一致性
+  structure:
+    name: Project structure check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify CMake sources match src/ and apps/
+        run: |
+          python3 - <<'EOF'
+          import re, pathlib
+          cm = pathlib.Path('CMakeLists.txt').read_text()
+          src_names = sorted(set(re.findall(r'src/[\w/]+\.cpp', cm)))
+          actual_src = sorted(
+              p.as_posix().replace('\\', '/') for p in pathlib.Path('src').rglob('*.cpp'))
+          assert src_names == actual_src, f'src mismatch: {src_names} vs {actual_src}'
+          targets = re.findall(r'add_executable\(([\w-]+)\s*(.*?)\)', cm, re.S)
+          for name, srcs in targets:
+              for f in re.findall(r'([\w./-]+\.cpp)', srcs):
+                  assert pathlib.Path(f).exists(), f'{name}: missing {f}'
+          print(f'OK: {len(src_names)} src + {len(targets)} targets consistent')
+          EOF
+
+      - name: Verify fetch_deps.sh references
+        run: |
+          bash -n fetch_deps.sh && echo 'OK: fetch_deps.sh syntax valid'
+
+      - name: Markdown sanity (README sections)
+        run: |
+          python3 - <<'EOF'
+          import pathlib
+          r = pathlib.Path('README.md').read_text(encoding='utf-8')
+          for h in ['技术亮点', '系统架构', '文件解析', '构建与运行', '输出插件指南', '推流协议', '相关项目', '常见问题', 'License']:
+              assert h in r, f'README missing section: {h}'
+          print('OK: README sections complete')
+          EOF
+
+      - name: No sensitive paths
+        run: |
+          if grep -rn -E '/home/elf|192\.168\.[0-9]+\.[0-9]+|password\s*=' \
+               --include='*.cpp' --include='*.h' --include='*.md' \
+               --include='*.sh' --include='CMakeLists.txt' .; then
+            echo 'FAIL: sensitive content found'; exit 1
+          fi
+          echo 'OK: no sensitive paths'
