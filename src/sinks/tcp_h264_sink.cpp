@@ -12,6 +12,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <atomic>
 #include <condition_variable>
 #include <deque>
@@ -19,6 +20,8 @@
 #include <string>
 #include <thread>
 #include <vector>
+
+#include <sys/poll.h>          // pollfd, POLLIN/POLLHUP/POLLERR
 
 #include <im2d.h>
 #include <rockchip/mpp_buffer.h>
